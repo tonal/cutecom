@@ -94,6 +94,7 @@ class QCPPDialogImpl:public CuteCommDlg
       char m_keyCode;
 //    bool m_firstRep;
       unsigned int m_hexBytes;
+      char m_previousChar;
 
       QFile m_logFile;
 

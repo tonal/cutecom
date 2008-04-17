@@ -77,6 +77,7 @@ QCPPDialogImpl::QCPPDialogImpl(QWidget* parent)
 ,m_keyCode(0)
 //,m_firstRep(true)
 ,m_hexBytes(0)
+,m_previousChar('\0')
 {
    connect(m_connectPb, SIGNAL(clicked()), this, SLOT(connectTTY()));
    connect(m_closePb, SIGNAL(clicked()), this, SLOT(disconnectTTY()));
@@ -794,6 +795,7 @@ void QCPPDialogImpl::connectTTY()
    m_closePb->setEnabled(true);
 
    m_cmdLe->setFocus();
+   m_previousChar='\0';
 }
 
 void QCPPDialogImpl::enableSettingWidgets(bool enable)
@@ -1087,10 +1089,26 @@ void QCPPDialogImpl::readData(int fd)
       }
       else
       {
+         // also print a newline for \r, and print only one newline for \r\n
          if ((isprint(*c)) || (*c=='\n') || (*c=='\r'))
          {
-            if (*c!='\r')
+            if (*c=='\r')
+            {
+               text+='\n';
+            }
+            else if (*c=='\n')
+            {
+               if (m_previousChar != '\r')
+               {
+                  text+='\n';
+               }
+            }
+            else
+            {
                text+=(*c);
+            }
+
+            m_previousChar = *c;
          }
          else
          {
