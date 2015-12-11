@@ -34,6 +34,7 @@
 #include <qfileinfo.h>
 #include <qregexp.h>
 #include <qspinbox.h>
+#include <QIntValidator>
 //Added by qt3to4:
 #include <QKeyEvent>
 #include <QResizeEvent>
@@ -41,7 +42,7 @@
 #include <qtextstream.h>
 
 #include <q3process.h>
-#include <q3cstring.h>
+//#include <q3cstring.h>
 
 
 #include <iostream>
@@ -56,6 +57,8 @@ using namespace std;
 #include <sys/types.h>
 #include <sys/select.h>
 #include <fcntl.h>
+
+//#define  B76800   0x00001005
 
 void millisleep(int ms)
 {
@@ -133,7 +136,7 @@ QCPPDialogImpl::QCPPDialogImpl(QWidget* parent)
    connect(m_enableLoggingCb, SIGNAL(toggled(bool)), this, SLOT(enableLogging(bool)));
 //   connect(m_enableLoggingCb, SIGNAL(toggled(bool)), this, SLOT(enableLogging(bool)));
 
-   m_outputView->setWordWrapMode(QTextOption::WrapAnywhere); 
+   m_outputView->setWordWrapMode(QTextOption::WrapAnywhere);
    m_outputView->document()->setMaximumBlockCount(500);
 //  TODO ? m_outputView->setWordWrap(Q3TextEdit::WidgetWidth);
 
@@ -157,7 +160,7 @@ void QCPPDialogImpl::fillBaudCb()
 #ifdef B0
    m_baudCb->addItem("0");
 #endif
-   
+
 #ifdef B50
    m_baudCb->addItem("50");
 #endif
@@ -238,6 +241,7 @@ void QCPPDialogImpl::fillBaudCb()
 #ifdef B921600
    m_baudCb->addItem("921600");
 #endif
+   m_baudCb->setValidator(new QIntValidator(0, 999999, this));
 }
 
 void QCPPDialogImpl::resizeEvent(QResizeEvent *e)
@@ -257,7 +261,7 @@ void QCPPDialogImpl::saveSettings()
    settings.setValue("/cutecom/DontApplySettings", !m_applyCb->isChecked());
 
    settings.setValue("/cutecom/Device", m_deviceCb->currentText());
-   settings.setValue("/cutecom/Baud", m_baudCb->currentItem());
+   settings.setValue("/cutecom/Baud", m_baudCb->currentText());
    settings.setValue("/cutecom/Databits", m_dataBitsCb->currentItem());
    settings.setValue("/cutecom/Parity", m_parityCb->currentItem());
    settings.setValue("/cutecom/Stopbits", m_stopCb->currentItem());
@@ -323,9 +327,7 @@ void QCPPDialogImpl::readSettings()
 
    int defaultBaud = settings.value("/cutecom/Baud", -1).toInt();
    if (defaultBaud != -1)
-   {
-      m_baudCb->setCurrentIndex(defaultBaud);
-   }
+      m_baudCb->lineEdit()->setText(QString("%1").arg(defaultBaud));
    m_dataBitsCb->setCurrentIndex(settings.value("/cutecom/Databits", 3).toInt());
    m_parityCb->setCurrentIndex(settings.value("/cutecom/Parity", 0).toInt());
    m_stopCb->setCurrentIndex(settings.value("/cutecom/Stopbits", 0).toInt());
@@ -340,14 +342,14 @@ void QCPPDialogImpl::readSettings()
 
    m_logAppendCb->setCurrentIndex(settings.value("/cutecom/AppendToLogFile", 0).toInt());
 
-   int x=settings.value("/cutecom/width", -1).toInt();
-   int y=settings.value("/cutecom/height", -1).toInt();
+   const int x = settings.value("/cutecom/width", -1).toInt();
+   const int y = settings.value("/cutecom/height", -1).toInt();
    if ((x>100) && (y>100))
    {
       resize(x,y);
    }
 
-   bool entryFound = settings.contains("/cutecom/AllDevices");
+   const bool entryFound = settings.contains("/cutecom/AllDevices");
    QStringList devices=settings.value("/cutecom/AllDevices").toStringList();
    if (!entryFound)
    {
@@ -653,7 +655,7 @@ bool QCPPDialogImpl::eventFilter(QObject* watched, QEvent *e)
 //            std::cerr<<"c";
             m_keyCode=3;
             sendByte(m_keyCode, 0);
-            m_keyRepeatTimer.setSingleShot(false); 
+            m_keyRepeatTimer.setSingleShot(false);
             m_keyRepeatTimer.start(0);
             return true;
          }
@@ -678,6 +680,11 @@ bool QCPPDialogImpl::eventFilter(QObject* watched, QEvent *e)
    }
 
    return false;
+}
+
+void QCPPDialogImpl::closeEvent(QCloseEvent* e) {
+  saveSettings();
+  QWidget::changeEvent(e);
 }
 
 void QCPPDialogImpl::sendKey()
@@ -1045,7 +1052,7 @@ void QCPPDialogImpl::setNewOptions(int baudrate, int databits, const QString& pa
 #ifdef B0
    case      0: _baud=B0;     break;
 #endif
-   
+
 #ifdef B50
    case     50: _baud=B50;    break;
 #endif
@@ -1129,8 +1136,38 @@ void QCPPDialogImpl::setNewOptions(int baudrate, int databits, const QString& pa
 //      _baud=B256000;
       break;
    }
-   cfsetospeed(&newtio, (speed_t)_baud);
-   cfsetispeed(&newtio, (speed_t)_baud);
+   if (_baud) {
+      cfsetospeed(&newtio, (speed_t)_baud);
+      cfsetispeed(&newtio, (speed_t)_baud);
+   } else {
+     // http://www.downtowndougbrown.com/2013/11/linux-custom-serial-baud-rates/
+     // #include <asm/termios.h> // Конфликтует со стандартными заголовками
+     const int NCCS_ = 19;
+     struct termios2 {
+        tcflag_t c_iflag;               /* input mode flags */
+        tcflag_t c_oflag;               /* output mode flags */
+        tcflag_t c_cflag;               /* control mode flags */
+        tcflag_t c_lflag;               /* local mode flags */
+        cc_t c_line;                    /* line discipline */
+        cc_t c_cc[NCCS_];                /* control characters */
+        speed_t c_ispeed;               /* input speed */
+        speed_t c_ospeed;               /* output speed */
+     };
+     termios2 tio;
+
+     const uint BOTHER = 0010000;
+     int rs = 0;
+     if(rs = ioctl(m_fd, TCGETS2, &tio))
+       std::cerr<<"ioctl() TCGETS2 failed "<<rs<<std::endl;
+     else {
+       tio.c_cflag &= ~CBAUD;
+       tio.c_cflag |= BOTHER;
+       tio.c_ispeed = baudrate;
+       tio.c_ospeed = baudrate;
+       if(ioctl(m_fd, TCSETS2, &tio))
+         std::cerr<<"ioctl() TCSETS2 failed "<<rs<<std::endl;
+     }
+   }
 
    /* We generate mark and space parity ourself. */
    if (databits == 7 && (parity=="Mark" || parity == "Space"))
@@ -1273,6 +1310,7 @@ void QCPPDialogImpl::readData(int fd)
    if (m_logFile.isOpen())
    {
       m_logFile.write(m_buf, bytesRead);
+      m_logFile.flush();
    }
 
    QString text;
@@ -1344,7 +1382,7 @@ void QCPPDialogImpl::addOutput(const QString& text)
    {
       doOutput();
       m_outputTimerStart.restart();
-      m_outputTimer.setSingleShot(true); 
+      m_outputTimer.setSingleShot(true);
       m_outputTimer.start(50);
    }
    else
@@ -1355,7 +1393,7 @@ void QCPPDialogImpl::addOutput(const QString& text)
          doOutput();
          m_outputTimerStart.restart();
       }
-      m_outputTimer.setSingleShot(true); 
+      m_outputTimer.setSingleShot(true);
       m_outputTimer.start(50);
    }
 }
@@ -1367,7 +1405,7 @@ void QCPPDialogImpl::doOutput()
       return;
    }
 
-   m_outputView->append(m_outputBuffer); 
+   m_outputView->append(m_outputBuffer);
    m_outputBuffer.clear();
 }
 

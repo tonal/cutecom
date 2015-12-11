@@ -77,7 +77,8 @@ class QCPPDialogImpl:public QWidget, public Ui::CuteCommDlg
       void nextCmd();
       bool sendString(const QString& s);
       void setNewOptions(int baudrate, int databits, const QString& parity, const QString& stop, bool softwareHandshake, bool hardwareHandshake);
-      virtual void resizeEvent(QResizeEvent *e);
+      virtual void resizeEvent(QResizeEvent*);
+      virtual void closeEvent(QCloseEvent*);
 
       bool m_isConnected;
       int m_fd;
